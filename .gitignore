@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Bot specific
+.env
+*.session
+*.session-journal
+Moviebot_logs.txt
+DreamXlogs.txt
+New_Line_Movies_Bot.session
+
+# Environments
+.venv
+venv/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+.project
+.pydevproject
+.settings/
