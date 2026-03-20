@@ -101,13 +101,15 @@ async def moviebot_start():
     try:
         await Media.ensure_indexes()
     except Exception as e:
-        logging.error(f"Error ensuring indexes for Media: {e}")
+        if "already exists with a different name" not in str(e):
+            logging.error(f"Error ensuring indexes for Media: {e}")
 
     if MULTIPLE_DB:
         try:
             await Media2.ensure_indexes()
         except Exception as e:
-            logging.error(f"Error ensuring indexes for Media2: {e}")
+            if "already exists with a different name" not in str(e):
+                logging.error(f"Error ensuring indexes for Media2: {e}")
         print("Multiple Database Mode On. Now Files Will Be Save In Second DB If First DB Is Full")
     else:
         print("Single DB Mode On ! Files Will Be Save In First Database")

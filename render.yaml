@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: Newline-Filter-Bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URI
+        sync: false
+      - key: DATABASE_NAME
+        sync: false
+      - key: LOG_CHANNEL
+        sync: false
+      - key: ADMINS
+        sync: false
+      - key: HAS_SSL
+        value: "true"
+      - key: RENDER
+        value: "true"
+      - key: FQDN
+        sync: false # Set this to your-app-name.onrender.com
+      - key: PORT
+        value: "8080"
