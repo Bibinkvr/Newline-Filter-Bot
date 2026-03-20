@@ -210,6 +210,7 @@ BAD_WORDS = {
 
 ON_RENDER = bool(getenv('RENDER', False))
 ON_HEROKU = bool(getenv('DYNO', False))
+NO_PORT = bool(getenv('NO_PORT', False))
 APP_NAME = str(getenv('APP_NAME')) if ON_HEROKU else None
 
 BIND_ADRESS = str(getenv('WEB_SERVER_BIND_ADDRESS', '0.0.0.0'))
