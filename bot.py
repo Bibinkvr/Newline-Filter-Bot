@@ -15,7 +15,7 @@ from database.users_chats_db import db
 from info import *
 from utils import temp
 from Script import script
-from plugins import web_server, check_expired_premium, keep_alive
+from plugins import web_server, keep_alive
 from moviebot.Bot import moviebot
 from moviebot.util.keepalive import ping_server
 from moviebot.Bot.clients import initialize_clients
@@ -119,7 +119,6 @@ async def moviebot_start():
     temp.B_NAME = me.first_name
     temp.B_LINK = me.mention
     moviebot.username = '@' + me.username
-    moviebot.loop.create_task(check_expired_premium(moviebot))
     logging.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
     logging.info(LOG_STR)
     logging.info(script.LOGO)
