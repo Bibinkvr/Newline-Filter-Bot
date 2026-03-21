@@ -30,11 +30,6 @@ BATCH_FILES = {}
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     try:
-        stick_id = "CAACAgUAAxkBAAEQJmJpViid_0yscWKPfh3RMCY8pIkmXwACMAcAAqzbsFexyKU6FPQAAjgE"
-        try:
-            sticker = await message.reply_sticker(sticker=stick_id)
-        except Exception as e:
-            logger.exception("reply_sticker failed: %s", e)
         if EMOJI_MODE:
             try:
                 await message.react(emoji=random.choice(REACTIONS), big=True)
@@ -82,7 +77,7 @@ async def start(client, message):
                 reply_markup=reply_markup,
                 parse_mode=enums.ParseMode.HTML
             )
-            await sticker.delete()
+
             await asyncio.sleep(300)
             await dlt.delete()
             return         
@@ -94,7 +89,7 @@ async def start(client, message):
                       ]]
             reply_markup = InlineKeyboardMarkup(buttons)
             await message.reply(script.GSTART_TXT.format(message.from_user.mention if message.from_user else message.chat.title, temp.U_NAME, temp.B_NAME), reply_markup=reply_markup, disable_web_page_preview=True)
-            await sticker.delete()
+
             await asyncio.sleep(2) 
             if not await db.get_chat(message.chat.id):
                 total=await client.get_chat_members_count(message.chat.id)
@@ -302,7 +297,7 @@ async def start(client, message):
                         reply_markup=reply_markup,
                         parse_mode=enums.ParseMode.HTML
                     )
-                    await sticker.delete()
+
                     await asyncio.sleep(300) 
                     await n.delete()
                     await m.delete()
@@ -350,7 +345,7 @@ async def start(client, message):
                     )
                     filesarr.append(msg)
                 k = await client.send_message(chat_id=message.from_user.id, text=script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
-                await sticker.delete()
+
                 await asyncio.sleep(DELETE_TIME)
                 for x in filesarr:
                     await x.delete()
@@ -405,7 +400,7 @@ async def start(client, message):
                 k = await msg.reply(script.DEL_MSG.format(get_time(DELETE_TIME)),
                     quote=True, parse_mode=enums.ParseMode.HTML
                 )
-                await sticker.delete()
+
                 await asyncio.sleep(DELETE_TIME)
                 await msg.delete()
                 await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
@@ -444,7 +439,7 @@ async def start(client, message):
         k = await msg.reply(script.DEL_MSG.format(get_time(DELETE_TIME)),
             quote=True, parse_mode=enums.ParseMode.HTML
         )
-        await sticker.delete()
+
         await asyncio.sleep(DELETE_TIME)
         await msg.delete()
         await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
@@ -455,7 +450,7 @@ async def start(client, message):
     finally:
         if sticker:
             try:
-                await sticker.delete()
+
             except Exception as e:
                 logger.exception(f"Error In Deleting Sticker - {e}")
                 pass
