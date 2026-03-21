@@ -447,13 +447,7 @@ async def start(client, message):
     except Exception as e:
         logger.exception(f"Error In /start command - {e}")
         pass
-    finally:
-        if sticker:
-            try:
 
-            except Exception as e:
-                logger.exception(f"Error In Deleting Sticker - {e}")
-                pass
 
 async def stream_buttons(user_id: int, file_id: str):
     return [[InlineKeyboardButton('📌 ᴊᴏɪɴ ᴜᴘᴅᴀᴛᴇꜱ ᴄʜᴀɴɴᴇʟ 📌', url=UPDATE_CHNL_LNK)]]
