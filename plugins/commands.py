@@ -37,50 +37,7 @@ async def start(client, message):
                 await message.react(emoji="⚡️")
                 pass
         m = message
-        if len(m.command) == 2 and m.command[1].startswith(('notcopy', 'sendall')):
-            _, userid, verify_id, file_id = m.command[1].split("_", 3)
-            user_id = int(userid)
-            grp_id = temp.VERIFICATIONS.get(user_id, 0)
-            settings = await get_settings(grp_id)         
-            verify_id_info = await db.get_verify_id_info(user_id, verify_id)
-            if not verify_id_info or verify_id_info["verified"]:
-                return await message.reply("<b>ʟɪɴᴋ ᴇxᴘɪʀᴇᴅ ᴛʀʏ ᴀɢᴀɪɴ...</b>")  
 
-            ist_timezone = pytz.timezone('Asia/Kolkata')
-            if await db.user_verified(user_id):
-                key = "third_time_verified"
-            else:
-                key = "second_time_verified" if await db.is_user_verified(user_id) else "last_verified"
-            current_time = datetime.now(tz=ist_timezone)
-            result = await db.update_notcopy_user(user_id, {key:current_time})
-            await db.update_verify_id_info(user_id, verify_id, {"verified":True})
-            if key == "third_time_verified": 
-                num = 3 
-            else: 
-                num =  2 if key == "second_time_verified" else 1 
-            if key == "third_time_verified": 
-                msg = script.THIRDT_VERIFY_COMPLETE_TEXT
-            else:
-                msg = script.SECOND_VERIFY_COMPLETE_TEXT if key == "second_time_verified" else script.VERIFY_COMPLETE_TEXT
-            if message.command[1].startswith('sendall'):
-                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=allfiles_{grp_id}_{file_id}"
-            else:
-                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=file_{grp_id}_{file_id}"
-            await client.send_message(settings['log'], script.VERIFIED_LOG_TEXT.format(m.from_user.mention, user_id, datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d %B %Y'), num))
-            btn = [[
-                InlineKeyboardButton("✅ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ꜰɪʟᴇ ✅", url=verifiedfiles),
-            ]]
-            reply_markup=InlineKeyboardMarkup(btn)
-            dlt=await m.reply_photo(
-                photo=(VERIFY_IMG),
-                caption=msg.format(message.from_user.mention, get_readable_time(TWO_VERIFY_GAP)),
-                reply_markup=reply_markup,
-                parse_mode=enums.ParseMode.HTML
-            )
-
-            await asyncio.sleep(300)
-            await dlt.delete()
-            return         
         if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
             buttons = [[
                         InlineKeyboardButton('❤️ ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ ❤️', url=f'http://t.me/{temp.U_NAME}?startgroup=true')
@@ -262,50 +219,6 @@ async def start(client, message):
 
 
         user_id = m.from_user.id
-        if True:
-            try:
-                grp_id = int(grp_id)
-                user_verified = await db.is_user_verified(user_id)
-                settings = await get_settings(grp_id)
-                is_second_shortener = await db.use_second_shortener(user_id, settings.get('verify_time', TWO_VERIFY_GAP)) 
-                is_third_shortener = await db.use_third_shortener(user_id, settings.get('third_verify_time', THREE_VERIFY_GAP))
-                if settings.get("is_verify", IS_VERIFY) and (not user_verified or is_second_shortener or is_third_shortener):
-                    verify_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
-                    await db.create_verify_id(user_id, verify_id)
-                    temp.VERIFICATIONS[user_id] = grp_id
-                    if message.command[1].startswith('allfiles'):
-                        verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=sendall_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
-                    else:
-                        verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=notcopy_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
-                    if is_third_shortener:
-                        howtodownload = settings.get('tutorial_3', TUTORIAL_3)
-                    else:
-                        howtodownload = settings.get('tutorial_2', TUTORIAL_2) if is_second_shortener else settings.get('tutorial', TUTORIAL)
-                    buttons = [[
-                        InlineKeyboardButton(text="♻️ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪꜰʏ ♻️", url=verify)
-                    ],[
-                        InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
-                    ]]
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                    if await db.user_verified(user_id): 
-                        msg = script.THIRDT_VERIFICATION_TEXT
-                    else:            
-                        msg = script.SECOND_VERIFICATION_TEXT if is_second_shortener else script.VERIFICATION_TEXT
-                    n=await m.reply_text(
-                        text=msg.format(message.from_user.mention),
-                        protect_content = True,
-                        reply_markup=reply_markup,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-
-                    await asyncio.sleep(300) 
-                    await n.delete()
-                    await m.delete()
-                    return
-            except Exception as e:
-                print(f"Error In Verification - {e}")
-                pass
-
         # Now, await the file details task
         files_ = await file_details_task
 
@@ -1236,28 +1149,6 @@ async def reset_group_callback(client, callback_query):
         [InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ", callback_data="close_data")]
     ]
     await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
-
-@Client.on_message(filters.command("verify") & filters.user(ADMINS))
-async def verify(bot, message):
-    try:
-        chat_type = message.chat.type
-        if chat_type == enums.ChatType.PRIVATE:
-            return await message.reply_text("ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ᴡᴏʀᴋs ᴏɴʟʏ ɪɴ ɢʀᴏᴜᴘs!")
-        if chat_type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
-            grpid = message.chat.id
-            title = message.chat.title
-            command_text = message.text.split(' ')[1] if len(message.text.split(' ')) > 1 else None
-            if command_text == "off":
-                await save_group_settings(grpid, 'is_verify', False)
-                return await message.reply_text("✓ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅɪsᴀʙʟᴇᴅ.")
-            elif command_text == "on":
-                await save_group_settings(grpid, 'is_verify', True)
-                return await message.reply_text("✗ ᴠᴇʀɪꜰʏ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴇɴᴀʙʟᴇᴅ.")
-            else:
-                return await message.reply_text("ʜɪ, ᴛᴏ ᴇɴᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify on</code> ᴀɴᴅ ᴛᴏ ᴅɪsᴀʙʟᴇ ᴠᴇʀɪꜰʏ, ᴜsᴇ <code>/verify off</code>.")
-    except Exception as e:
-        print(f"Error: {e}")
-        await message.reply_text(f"Error: {e}")
 
 @Client.on_message(filters.command('set_fsub'))
 async def set_fsub(client, message):
