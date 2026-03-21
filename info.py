@@ -196,7 +196,7 @@ FQDN = str(getenv('FQDN', BIND_ADRESS))
 if not ON_HEROKU and not ON_RENDER and FQDN == '0.0.0.0':
     FQDN = 'localhost'
 
-URL = "https://{}/".format(FQDN) if ON_HEROKU or ON_RENDER or NO_PORT else "http://{}:{}/".format(FQDN, PORT)
+URL = getenv('RENDER_EXTERNAL_URL', "https://{}/".format(FQDN)) if ON_RENDER else "https://{}/".format(FQDN) if ON_HEROKU or NO_PORT else "http://{}:{}/".format(FQDN, PORT)
 SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
 WORKERS = int(environ.get('WORKERS', '4'))
 SESSION_NAME = str(environ.get('SESSION_NAME', 'Moviebot'))
