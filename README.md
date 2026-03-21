@@ -97,9 +97,7 @@ verification        – View total verified users
 top                 – Search top trending items
 start               – Start the bot
 settings            – Modify bot settings
-plan                – View available plans
-myplan              – Check your active plan
-stats               – View database stats
+
 info                – Get user info
 id                  – Get Telegram ID
 link                – Create single post link
