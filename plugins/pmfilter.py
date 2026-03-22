@@ -53,13 +53,13 @@ def get_titles(files):
     return sorted(list(titles))
 
 def build_title_buttons(query_key, files):
-    titles = get_titles(files)
+    cache_entry = CACHE.get(query_key)
+    if not cache_entry:
+        return []
+    titles = cache_entry["titles"]
     btn_list = []
-    for t in titles:
-        # We use a special callback to select title: title|title_name
-        # But wait, we must stick to the 5-pipe format.
-        # Let's use: key|title_selection|title_name|all|all
-        btn_list.append(InlineKeyboardButton(t, callback_data=f"select_title|{query_key}|{t}"))
+    for i, t in enumerate(titles):
+        btn_list.append(InlineKeyboardButton(t, callback_data=f"select_title|{query_key}|{i}"))
     btns = chunk_buttons(btn_list, 2)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Sʜᴏᴡ / Mᴏᴠɪᴇ ⇊", callback_data="ident")])
     btns.append([InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ 🚫", callback_data="close_data")])
@@ -121,10 +121,13 @@ def build_season_buttons(query_key, req_type, files):
     return btns
 
 def build_language_buttons(query_key, req_type, season, files):
-    languages = get_languages(files, season=season if req_type == "series" else None)
+    cache_entry = CACHE.get(query_key)
+    if not cache_entry:
+        return []
+    languages = cache_entry["langs"]
     btn_list = []
-    for l in languages:
-        btn_list.append(InlineKeyboardButton(f"{l.title()}", callback_data=f"{query_key}|{req_type}|{season}|{l}|all"))
+    for i, l in enumerate(languages):
+        btn_list.append(InlineKeyboardButton(f"{l.title()}", callback_data=f"{query_key}|{req_type}|{season}|{i}|all"))
     btns = chunk_buttons(btn_list, 3)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Lᴀɴɢᴜᴀɢᴇ ⇊", callback_data="ident")])
     if languages:
@@ -137,10 +140,13 @@ def build_language_buttons(query_key, req_type, season, files):
     return btns
 
 def build_quality_buttons(query_key, req_type, season, language, files):
-    qualities = get_qualities(files, season=season if req_type == "series" else None, language=language)
+    cache_entry = CACHE.get(query_key)
+    if not cache_entry:
+        return []
+    qualities = cache_entry["quals"]
     btn_list = []
-    for q in qualities:
-        btn_list.append(InlineKeyboardButton(f"{q.title()}", callback_data=f"{query_key}|{req_type}|{season}|{language}|{q}"))
+    for i, q in enumerate(qualities):
+        btn_list.append(InlineKeyboardButton(f"{q.title()}", callback_data=f"{query_key}|{req_type}|{season}|{language}|{i}"))
     btns = chunk_buttons(btn_list, 3)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Qᴜᴀʟɪᴛʏ ⇊", callback_data="ident")])
     if qualities:
@@ -150,16 +156,28 @@ def build_quality_buttons(query_key, req_type, season, language, files):
     return btns
 
 def build_files_buttons(query_key, req_type, season, lang, qual, files):
+    cache_entry = CACHE.get(query_key)
+    if not cache_entry:
+        return []
+        
+    resolved_lang = lang
+    if lang != "all" and lang.isdigit():
+        resolved_lang = cache_entry["langs"][int(lang)]
+    
+    resolved_qual = qual
+    if qual != "all" and qual.isdigit():
+        resolved_qual = cache_entry["quals"][int(qual)]
+
     filtered_files = []
     for f in files:
         f_season = str(getattr(f, "season", ""))
         if req_type == "series" and season != "all" and f_season != season:
             continue
         f_lang = str(getattr(f, "language", "")).lower()
-        if lang != "all" and f_lang != lang:
+        if resolved_lang != "all" and f_lang != resolved_lang:
             continue
         f_qual = str(getattr(f, "quality", "")).lower()
-        if qual != "all" and f_qual != qual:
+        if resolved_qual != "all" and f_qual != resolved_qual:
             continue
         filtered_files.append(f)
 
@@ -212,13 +230,19 @@ def get_next_markup(query_key, req_type, season, lang, qual, files):
 
 @Client.on_callback_query(filters.regex(r"^select_title\|"))
 async def select_title_callback(client: Client, query: CallbackQuery):
-    _, query_key, title_name = query.data.split("|", 2)
+    _, query_key, title_index = query.data.split("|", 2)
     cache_entry = CACHE.get(query_key)
     if not cache_entry:
         return await query.answer("Cᴀᴄʜᴇ Exᴘɪʀᴇᴅ!", show_alert=True)
     
+    title_name = cache_entry["titles"][int(title_index)]
+    
     # Filter cache to ONLY this title
     cache_entry["files"] = [f for f in cache_entry["files"] if getattr(f, "title", "").lower() == title_name.lower()]
+    
+    # Re-generate metadata lists for THIS specific title
+    cache_entry["langs"] = get_languages(cache_entry["files"])
+    cache_entry["quals"] = get_qualities(cache_entry["files"])
     
     # Now continue to next markup
     markup = get_next_markup(query_key, "all", "all", "all", "all", cache_entry["files"])
@@ -347,7 +371,7 @@ async def new_hierarchical_filter_callback(client: Client, query: CallbackQuery)
     if len(parts) != 5:
         return await query.answer("Iɴᴠᴀʟɪᴅ Cᴀʟʟʙᴀᴄᴋ Dᴀᴛᴀ!", show_alert=True)
         
-    query_key, req_type, season, language, quality = parts
+    query_key, req_type, season, lang_idx, qual_idx = parts
     
     try:
         if int(query.from_user.id) not in [query.message.reply_to_message.from_user.id, 0]:
@@ -360,8 +384,17 @@ async def new_hierarchical_filter_callback(client: Client, query: CallbackQuery)
     if not cache_entry:
         return await query.answer("Cᴀᴄʜᴇ Exᴘɪʀᴇᴅ! Pʟᴇᴀꜱᴇ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ.", show_alert=True)
         
+    # Resolve indexes
+    language = lang_idx
+    if lang_idx != "all" and lang_idx.isdigit():
+        language = cache_entry["langs"][int(lang_idx)]
+        
+    quality = qual_idx
+    if qual_idx != "all" and qual_idx.isdigit():
+        quality = cache_entry["quals"][int(qual_idx)]
+
     files = cache_entry["files"]
-    markup = get_next_markup(query_key, req_type, season, language, quality, files)
+    markup = get_next_markup(query_key, req_type, season, lang_idx, qual_idx, files)
     
     try:
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(markup))
@@ -1129,7 +1162,13 @@ async def auto_filter(client, msg, spoll=False):
             settings = await get_settings(message.chat.id)
             await msg.message.delete()
         cache_key = hashlib.md5(f"{message.from_user.id}:{search.lower()}".encode()).hexdigest()[:8]
-        CACHE[cache_key] = {"files": files, "time": time.time()}
+        CACHE[cache_key] = {
+            "files": files, 
+            "titles": get_titles(files),
+            "langs": get_languages(files),
+            "quals": get_qualities(files),
+            "time": time.time()
+        }
         
         btn = get_next_markup(cache_key, "all", "all", "all", "all", files)
         
