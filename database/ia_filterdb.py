@@ -43,6 +43,12 @@ class Media(Document):
     mime_type = fields.StrField(allow_none=True)
     caption = fields.StrField(allow_none=True)
     cover = fields.StrField(allow_none=True)
+    title = fields.StrField(allow_none=True)
+    type = fields.StrField(allow_none=True)
+    season = fields.IntField(allow_none=True)
+    episode = fields.IntField(allow_none=True)
+    language = fields.StrField(allow_none=True)
+    quality = fields.StrField(allow_none=True)
 
     class Meta:
         indexes = ("$file_name",)
@@ -59,7 +65,12 @@ class Media2(Document):
     mime_type = fields.StrField(allow_none=True)
     caption = fields.StrField(allow_none=True)
     cover = fields.StrField(allow_none=True)
-
+    title = fields.StrField(allow_none=True)
+    type = fields.StrField(allow_none=True)
+    season = fields.IntField(allow_none=True)
+    episode = fields.IntField(allow_none=True)
+    language = fields.StrField(allow_none=True)
+    quality = fields.StrField(allow_none=True)
 
     class Meta:
         indexes = ("$file_name",)
@@ -89,6 +100,73 @@ async def check_db_size(db):
         return 0
 
 
+def parse_metadata(file_name, caption):
+    clean_caption = re.sub(r'<[^>]+>', '', caption or "").lower()
+    raw_text = f"{file_name or ''}\n{clean_caption}".lower()
+
+    # TYPE
+    se_match = re.search(r"s(\d+)[e](\d+)", raw_text)
+    media_type = "series" if "season details" in raw_text or se_match else "movie"
+
+    # TITLE
+    title = file_name or ""
+    title = re.sub(r"ss™|\[.*?\]", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"(480p|720p|1080p|1440p|2160p)", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"(h264|h265|x264|x265|hevc)", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"(web-dl|hdrip|bluray|hdtv|camrip|dvdrip|pre-dvd|v3-pre)", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"(malayalam|tamil|hindi|english|telugu)", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"s\d+e\d+", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"\b\d{4}\b", "", title)
+    title = re.sub(r"\.(mkv|mp4|avi)$", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"[^\w\s]", " ", title)
+    title = re.sub(r"\s+", " ", title).strip().lower()
+
+    title_match = re.search(r"series details:.*?title:\s*([^\n]+)", raw_text, re.DOTALL)
+    if title_match:
+        title = title_match.group(1).strip().lower()
+
+    # SEASON
+    season_match = re.search(r"season number:\s*(\d+)", raw_text)
+    if not season_match:
+        season_match = re.search(r"s(\d+)", raw_text)
+    season = int(season_match.group(1)) if season_match else None
+
+    # EPISODE
+    episode_match = re.search(r"episode number:\s*(\d+)", raw_text)
+    if not episode_match:
+        episode_match = re.search(r"e(\d+)", raw_text)
+    episode = int(episode_match.group(1)) if episode_match else None
+
+    # LANGUAGE FIX
+    lang_match = re.search(r"languages?:\s*([a-z,\s]+)", raw_text)
+    if not lang_match:
+        lang_match = re.search(r"audio\s*:\s*([a-z]+)", raw_text)
+    if not lang_match:
+        lang_match = re.search(r"(malayalam|tamil|hindi|english|telugu)", raw_text)
+
+    if lang_match:
+        language = lang_match.group(1).split(",")[0].strip().lower()
+    else:
+        language = "unknown"
+
+    # QUALITY
+    quality_match = re.search(r"resolution\s*:\s*(\d{3,4}p)", raw_text)
+    if not quality_match:
+        quality_match = re.search(r"quality\s*:\s*(\d{3,4}p)", raw_text)
+    if not quality_match:
+        quality_match = re.search(r"(480p|720p|1080p|1440p|2160p)", raw_text)
+
+    quality = quality_match.group(1).lower() if quality_match else None
+
+    return {
+        "title": title,
+        "type": media_type,
+        "season": season,
+        "episode": episode,
+        "language": language,
+        "quality": quality
+    }
+
 async def save_file(media):
     """Save file in database, with detailed logging."""
     file_id, file_ref = unpack_new_file_id(media.file_id)
@@ -96,6 +174,9 @@ async def save_file(media):
         r"[_\-\.#+$%^&*()!~`,;:\"'?/<>\[\]{}=|\\]", " ", str(media.file_name)
     )
     file_name = re.sub(r"\s+", " ", file_name).strip()
+    
+    meta = parse_metadata(media.file_name, media.caption.html if media.caption else "")
+
     saveMedia = Media
     target_db = "Primary"
     if MULTIPLE_DB:
@@ -124,6 +205,12 @@ async def save_file(media):
             mime_type=media.mime_type,
             caption=(media.caption.html if media.caption and INDEX_CAPTION else None),
             cover=cover_to_use if COVERX else None,
+            title=meta["title"],
+            type=meta["type"],
+            season=meta["season"],
+            episode=meta["episode"],
+            language=meta["language"],
+            quality=meta["quality"],
         )
     except Exception as e:
         logger.exception(f"[ERROR] '{file_name}' → {e}")
@@ -171,9 +258,9 @@ async def get_search_results(chat_id, query, file_type=None, max_results=None, o
             
         # This is the key change for balancing speed and flexibility
         if ' ' in query:
-            # For multi-word queries, allow spaces, dots, or hyphens between words.
+            # For multi-word queries, use word boundaries for each word to improve accuracy.
             words = [re.escape(word) for word in query.split()]
-            raw_pattern = r'.*'.join(words)
+            raw_pattern = r".*\b" + r"\b.*\b".join(words) + r"\b"
         else:
             # For single-word queries, use word boundaries for accuracy.
             raw_pattern = r"\b" + re.escape(query) + r"\b"
