@@ -32,17 +32,26 @@ TIMEZONE = "Asia/Kolkata"
 SPELL_CHECK = {}
 
 
-import time
-import hashlib
-
 CACHE = {}
-CACHE_TTL = 3600
+MAX_CACHE = 100
+CACHE_TTL = 300
+USER_COOLDOWN = {}
 
 def clean_cache():
     now = time.time()
+    # Remove expired
     expired = [k for k, v in CACHE.items() if now - v.get("time", 0) > CACHE_TTL]
     for k in expired:
         del CACHE[k]
+    # Prune if over limit
+    if len(CACHE) > MAX_CACHE:
+        sorted_keys = sorted(CACHE.keys(), key=lambda k: CACHE[k].get("time", 0))
+        for k in sorted_keys[:len(CACHE) - MAX_CACHE]:
+            del CACHE[k]
+    # Clean cooldowns older than 10s
+    expired_cool = [k for k, v in USER_COOLDOWN.items() if now - v > 10]
+    for k in expired_cool:
+        del USER_COOLDOWN[k]
 
 def get_titles(files):
     titles = set()
@@ -60,7 +69,7 @@ def build_title_buttons(query_key, files):
     btn_list = []
     for i, t in enumerate(titles):
         btn_list.append(InlineKeyboardButton(t, callback_data=f"select_title|{query_key}|{i}"))
-    btns = chunk_buttons(btn_list, 2)
+    btns = chunk_buttons(btn_list, 3)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Sʜᴏᴡ / Mᴏᴠɪᴇ ⇊", callback_data="ident")])
     btns.append([InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ 🚫", callback_data="close_data")])
     return btns
@@ -155,7 +164,7 @@ def build_quality_buttons(query_key, req_type, season, language, files):
     btns.append([InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ 🚫", callback_data="close_data")])
     return btns
 
-def build_files_buttons(query_key, req_type, season, lang, qual, files):
+def build_files_buttons(query_key, req_type, season, lang, qual, files, page=0):
     cache_entry = CACHE.get(query_key)
     if not cache_entry:
         return []
@@ -183,16 +192,32 @@ def build_files_buttons(query_key, req_type, season, lang, qual, files):
 
     if req_type == "series":
         filtered_files.sort(key=lambda x: (getattr(x, "season", 0) or 0, getattr(x, "episode", 0) or 0))
-        
-    btns = [[InlineKeyboardButton(text=f"🔗 {get_size(file.file_size)} ≽ " + clean_filename(file.file_name), url=f"https://t.me/{temp.U_NAME}?start=bot_0_{file.file_id}")] for file in filtered_files[:100]]
-    if not btns:
+    
+    # Pagination: 20 per page
+    limit = 20
+    start = page * limit
+    end = start + limit
+    page_files = filtered_files[start:end]
+    
+    btns = [[InlineKeyboardButton(text=f"🔗 {get_size(file.file_size)} ≽ " + clean_filename(file.file_name), url=f"https://t.me/{temp.U_NAME}?start=bot_0_{file.file_id}")] for file in page_files]
+    
+    # Navigation row
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⋞ ᴘʀᴇᴠ", callback_data=f"page|{query_key}|{req_type}|{season}|{lang}|{qual}|{page-1}"))
+    if end < len(filtered_files):
+        nav.append(InlineKeyboardButton("ɴᴇxᴛ ⋟", callback_data=f"page|{query_key}|{req_type}|{season}|{lang}|{qual}|{page+1}"))
+    if nav:
+        btns.append(nav)
+
+    if not filtered_files:
         btns = [[InlineKeyboardButton("🚫 Nᴏ ꜰɪʟᴇꜱ ꜰᴏᴜɴᴅ ꜰᴏʀ ꜱᴇʟᴇᴄᴛᴇᴅ ꜰɪʟᴛᴇʀꜱ", callback_data="ident")]]
     else:
-        # Create a deep link using temp.GETALL
+        # Create a deep link using temp.GETALL for the FIRST 100 matches only to save memory
         import uuid
         state_key = f"allfiles_{uuid.uuid4().hex[:10]}"
         temp.GETALL[state_key] = filtered_files[:100]
-        btns.insert(0, [InlineKeyboardButton("📤 Sᴇɴᴅ Aʟʟ 📤", url=f"https://t.me/{temp.U_NAME}?start={state_key}")])
+        btns.insert(0, [InlineKeyboardButton("📤 Sᴇɴᴅ Aʟʟ (100) 📤", url=f"https://t.me/{temp.U_NAME}?start={state_key}")])
         
     btns.append([InlineKeyboardButton("🔙 Bᴀᴄᴋ", callback_data=f"{query_key}|{req_type}|{season}|{lang}|all")])
     btns.append([InlineKeyboardButton("🏠 Bᴀᴄᴋ ᴛᴏ Sᴛᴀʀᴛ", callback_data=f"{query_key}|all|all|all|all")])
@@ -224,7 +249,7 @@ def get_next_markup(query_key, req_type, season, lang, qual, files):
     if qual == "all":
         return build_quality_buttons(query_key, req_type, season, lang, type_files)
             
-    return build_files_buttons(query_key, req_type, season, lang, qual, type_files)
+    return build_files_buttons(query_key, req_type, season, lang, qual, files, page=0)
 
 
 
@@ -364,8 +389,29 @@ async def advantage_spoll_choker(bot, query):
         await asyncio.sleep(10)
         await k.delete()
 
+@Client.on_callback_query(filters.regex(r"^page\|"))
+async def pagination_callback(client: Client, query: CallbackQuery):
+    await query.answer()
+    parts = query.data.split("|")
+    if len(parts) != 7:
+        return
+        
+    _, query_key, req_type, season, lang_idx, qual_idx, page = parts
+    cache_entry = CACHE.get(query_key)
+    if not cache_entry:
+        return await query.edit_message_reply_markup(reply_markup=None)
+
+    files = cache_entry["files"]
+    markup = build_files_buttons(query_key, req_type, season, lang_idx, qual_idx, files, page=int(page))
+    
+    try:
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(markup))
+    except Exception as e:
+        logger.exception(e)
+
 @Client.on_callback_query(filters.regex(r"^([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)$"))
 async def new_hierarchical_filter_callback(client: Client, query: CallbackQuery):
+    await query.answer()
     data = query.data
     parts = data.split("|", 4)
     if len(parts) != 5:
@@ -1086,82 +1132,68 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
 async def auto_filter(client, msg, spoll=False):
     """
-    Core auto_filter logic with timing/debug logging removed.
+    Optimized auto_filter with caching, rate limiting, and dataset capping.
     """
-    curr_time = datetime.now(pytz.timezone('Asia/Kolkata')).time()
-
-    async def _schedule_delete(sent_obj, orig_msg, delay):
-        try:
-            await asyncio.sleep(delay)
-            try:
-                await sent_obj.delete()
-            except Exception:
-                pass
-            try:
-                await orig_msg.delete()
-            except Exception:
-                pass
-        except Exception:
-            # ignore scheduling errors
-            pass
-    m = None
     try:
+        clean_cache()
+        user_id = msg.from_user.id if msg.from_user else 0
+        now = time.time()
+        
+        # Rate Limiting: 2s
+        if user_id in USER_COOLDOWN and now - USER_COOLDOWN[user_id] < 2:
+            return
+        USER_COOLDOWN[user_id] = now
+
+        m = None
         if not spoll:
             message = msg
-            if message.text.startswith("/"):
+            if message.text.startswith("/") or re.findall(r"((^\/|^,|^!|^\.|^[\U0001F600-\U000E007F]).*)", message.text):
                 return
-            if re.findall(r"((^\/|^,|^!|^\.|^[\U0001F600-\U000E007F]).*)", message.text):
+            
+            search = message.text.lower().strip()
+            if not search or len(search) > 100:
                 return
-            if len(message.text) < 100:
-                message_text = message.text or ""
-                search = message_text.lower()
-                m = await message.reply_text(f"<b><i> 𝖲𝖾𝖺𝗋𝖼𝗁𝗂𝗇𝗀 𝖿𝗈𝗋 '{search}' 🔎</i></b>")
-                find = search.split(" ")
-                search = ""
-                removes = ["in", "upload", "series", "full",
-                           "horror", "thriller", "mystery", "print", "file"]
-                for x in find:
-                    if x in removes:
-                        continue
-                    else:
-                        search = search + x + " "
-                search = re.sub(r"\b(pl(i|e)*?(s|z+|ease|se|ese|(e+)s(e)?)|((send|snd|giv(e)?|gib)(\sme)?)|movie(s)?|new|latest|bro|bruh|broh|helo|that|find|dubbed|link|venum|iruka|pannunga|pannungga|anuppunga|anupunga|anuppungga|anupungga|film|undo|kitti|kitty|tharu|kittumo|kittum|movie|any(one)|with\ssubtitle(s)?)", "", search, flags=re.IGNORECASE)
-                search = search.replace("-", " ")
-                search = re.sub(r"[:']", "", search)
-                search = re.sub(r"\s+", " ", search).strip()
-                files, offset, total_results = await get_search_results(message.chat.id, search, offset=0, filter=True, max_results=1000)
-                settings = await get_settings(message.chat.id)
-                if not files:
-                    if settings.get("spell_check"):
-                        ai_sts = await m.edit('🤖 ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ, ᴀɪ ɪꜱ ᴄʜᴇᴄᴋɪɴɢ ʏᴏᴜʀ ꜱᴘᴇʟʟɪɴɢ...')
-                        is_misspelled = await ai_spell_check(chat_id=message.chat.id, wrong_name=search)
-                        if is_misspelled:
-                            await ai_sts.edit(f'✅ Aɪ Sᴜɢɢᴇsᴛᴇᴅ: <code>{is_misspelled}</code>\n🔍 Searching for it...')
-                            message.text = is_misspelled
-                            await ai_sts.delete()
-                            return await auto_filter(client, message)
+
+            m = await message.reply_text(f"<b><i> 𝖲𝖾𝖺𝗋𝖼𝗁𝗂𝗇𝗀 𝖿𝗈𝗋 '{search}' 🔎</i></b>")
+            
+            # Refine search query
+            find = search.split(" ")
+            search = ""
+            removes = ["in", "upload", "series", "full", "horror", "thriller", "mystery", "print", "file"]
+            for x in find:
+                if x not in removes:
+                    search = search + x + " "
+            search = re.sub(r"\b(pl(i|e)*?(s|z+|ease|se|ese|(e+)s(e)?)|((send|snd|giv(e)?|gib)(\sme)?)|movie(s)?|new|latest|bro|bruh|helo|that|find|dubbed|link|venum|film|undo|kitti|tharu|kittumo|movie|any(one)|with\ssubtitle(s)?)", "", search, flags=re.IGNORECASE)
+            search = re.sub(r"[:']", "", search.replace("-", " "))
+            search = re.sub(r"\s+", " ", search).strip()
+            
+            # Database Query (Single call per search)
+            files, offset, total_results = await get_search_results(message.chat.id, search, offset=0, filter=True, max_results=1000)
+            files = files[:300] # Cap search result dataset for memory
+            
+            settings = await get_settings(message.chat.id)
+            if not files:
+                if settings.get("spell_check"):
+                    ai_sts = await m.edit('🤖 ᴘʟᴇᴀꜱᴇ ᴡᴀɪᴛ...')
+                    is_misspelled = await ai_spell_check(chat_id=message.chat.id, wrong_name=search)
+                    if is_misspelled:
                         await ai_sts.delete()
-                        result = await advantage_spell_chok(client, message)
-                        return result
-                    else:
-                        try:
-                            if m:
-                                await m.delete()
-                        except Exception:
-                            pass
-                        result = await advantage_spell_chok(client, message)
-                        return result
-            else:
-                return
+                        message.text = is_misspelled
+                        return await auto_filter(client, message)
+                    await ai_sts.delete()
+                else:
+                    try: await m.delete()
+                    except: pass
+                return await advantage_spell_chok(client, message)
         else:
             message = msg.message.reply_to_message
             search, files, offset, total_results = spoll
-            # Ensure spoll files also has full data if needed? 
-            # Actually, advantage_spoll_choker already fetches files.
+            files = files[:300]
             m = await message.reply_text(f'🔎 sᴇᴀʀᴄʜɪɴɢ {search}', reply_to_message_id=message.id)
             settings = await get_settings(message.chat.id)
             await msg.message.delete()
-        cache_key = hashlib.md5(f"{message.from_user.id}:{search.lower()}".encode()).hexdigest()[:8]
+
+        cache_key = hashlib.md5(f"{user_id}:{search.lower()}".encode()).hexdigest()[:8]
         CACHE[cache_key] = {
             "files": files, 
             "titles": get_titles(files),
@@ -1172,96 +1204,27 @@ async def auto_filter(client, msg, spoll=False):
         
         btn = get_next_markup(cache_key, "all", "all", "all", "all", files)
         
-
+        # Poster logic optimized: limit to essential fields
+        imdb = None
         if settings.get('imdb'):
             imdb = await get_posterx(search, file=(files[0]).file_name) if TMDB_POSTER else await get_poster(search, file=(files[0]).file_name)
-        else:
-            imdb = None
-        cur_time = datetime.now(pytz.timezone('Asia/Kolkata')).time()
-        time_difference = timedelta(hours=cur_time.hour, minutes=cur_time.minute, seconds=(cur_time.second+(cur_time.microsecond/1000000))) - \
-            timedelta(hours=curr_time.hour, minutes=curr_time.minute,
-                      seconds=(curr_time.second+(curr_time.microsecond/1000000)))
-        remaining_seconds = "{:.2f}".format(time_difference.total_seconds())
-        TEMPLATE = script.IMDB_TEMPLATE_TXT
-        settings = await get_settings(message.chat.id)
-        if settings.get('template'):
-            TEMPLATE = settings['template']
-        if imdb:
-            cap = TEMPLATE.format(
-                query=search,
-                title=imdb['title'],
-                votes=imdb['votes'],
-                aka=imdb["aka"],
-                seasons=imdb["seasons"],
-                box_office=imdb['box_office'],
-                localized_title=imdb['localized_title'],
-                kind=imdb['kind'],
-                imdb_id=imdb["imdb_id"],
-                cast=imdb['cast'],
-                runtime=imdb['runtime'],
-                countries=imdb['countries'],
-                certificates=imdb['certificates'],
-                languages=imdb['languages'],
-                director=imdb['director'],
-                writer=imdb['writer'],
-                producer=imdb['producer'],
-                composer=imdb['composer'],
-                cinematographer=imdb['cinematographer'],
-                music_team=imdb['music_team'],
-                distributors=imdb['distributors'],
-                release_date=imdb['release_date'],
-                year=imdb['year'],
-                genres=imdb['genres'],
-                poster=imdb['poster'],
-                plot=imdb['plot'],
-                rating=imdb['rating'],
-                url=imdb['url'],
-                **locals()
-            )
-            temp.IMDB_CAP[message.from_user.id] = cap
-        else:
-            temp.IMDB_CAP[message.from_user.id] = None
-            cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n⏰ ʀᴇsᴜʟᴛ ɪɴ : <code>{remaining_seconds} Sᴇᴄᴏɴᴅs</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n⚜️ ᴘᴏᴡᴇʀᴇᴅ ʙʏ : ⚡ {message.chat.title or temp.B_LINK or 'ᴍᴏᴠɪᴇʙᴏᴛ'} \n\n<u>Your Requested Files Are Here</u> \n\n</b>"
+        
+        cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n</b>"
+        if imdb and settings.get('template'):
+            cap = settings['template'].format(title=imdb['title'], year=imdb['year'], rating=imdb['rating'], plot=imdb['plot'][:200], **imdb)
+
         sent = None
-        try:
-            if imdb and imdb.get('poster'):
-                try:
-                    if TMDB_POSTER:
-                        photo = imdb.get('backdrop') if imdb.get('backdrop') and LANDSCAPE_POSTER else imdb.get('poster')
-                    else:
-                        photo = imdb.get('poster')
-                    sent = await message.reply_photo(photo=photo, caption=cap, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
-                    if m:
-                        await m.delete()
-                except (MediaEmpty, PhotoInvalidDimensions, WebpageMediaEmpty):
-                    pic = imdb.get('poster')
-                    poster = pic.replace('.jpg', "._V1_UX360.jpg")
-                    sent = await message.reply_photo(photo=poster, caption=cap, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
-                    if m:
-                        await m.delete()
-                except Exception as e:
-                    logger.exception(e)
-                    sent = await message.reply_text(text=cap, reply_markup=InlineKeyboardMarkup(btn), disable_web_page_preview=True, parse_mode=enums.ParseMode.HTML)
-            else:
-                sent = await message.reply_text(text=cap, reply_markup=InlineKeyboardMarkup(btn), disable_web_page_preview=True, parse_mode=enums.ParseMode.HTML)
-                if m:
-                    await m.delete()
-        except Exception as e:
-            logger.exception("Failed to send result: %s", e)
-            return
-        try:
-            if settings.get('auto_delete'):
-                asyncio.create_task(_schedule_delete(sent, message, DELETE_TIME))
-        except KeyError:
-            try:
-                await save_group_settings(message.chat.id, 'auto_delete', True)
-            except Exception:
-                pass
+        markup = InlineKeyboardMarkup(btn)
+        if imdb and imdb.get('poster'):
+            sent = await message.reply_photo(photo=imdb.get('poster'), caption=cap, reply_markup=markup)
+        else:
+            sent = await message.reply_text(text=cap, reply_markup=markup, disable_web_page_preview=True)
+        
+        if m: await m.delete()
+        if settings.get('auto_delete'):
             asyncio.create_task(_schedule_delete(sent, message, DELETE_TIME))
-        return
     except Exception as e:
         logger.exception(e)
-        return
 
 async def ai_spell_check(chat_id, wrong_name):
     async def search_movie(wrong_name):
