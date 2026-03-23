@@ -454,6 +454,8 @@ async def old_get_poster(query, bulk=False, id=False, file=None):
     }
     
 async def get_posterx(query, bulk=False, id=False, file=None):
+    if not IMDB:
+        return None
     """
     Fetches movie details from TMDB using the get_movie_detailsx helper
     and formats the output to be compatible with the original get_poster function.

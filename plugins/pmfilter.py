@@ -1,8 +1,7 @@
 from utils import get_random_mix_id, get_size, is_subscribed, is_req_subscribed, group_setting_buttons, get_poster, get_posterx, temp, get_settings, save_group_settings, get_cap, imdb, is_check_admin, extract_request_content, log_error, clean_filename, generate_season_variations, clean_search_text
-import tracemalloc
 import time
 import hashlib
-from fuzzywuzzy import process
+from rapidfuzz import process
 from moviebot.util.file_properties import get_name, get_hash
 from urllib.parse import quote_plus
 import logging
@@ -27,7 +26,9 @@ lock = asyncio.Lock()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
 
-tracemalloc.start()
+
+DELETE_LIMIT = 100
+ACTIVE_DELETE = set()
 
 
 TIMEZONE = "Asia/Kolkata"
@@ -49,24 +50,44 @@ async def fsub_pool_msg_handler(client, message):
             await message.reply_text("Invalid input!")
             return
         
-        await save_group_settings(grp_id, "fsub_pool", pool)
+        valid_pool = []
+        for ch in pool:
+            try:
+                await client.get_chat(ch)
+                valid_pool.append(ch)
+            except:
+                continue
+        
+        if not valid_pool:
+            await message.reply_text("❌ None of the provided channels/usernames are valid or accessible by the bot.")
+            return
+
+        await save_group_settings(grp_id, "fsub_pool", valid_pool)
         await save_group_settings(grp_id, "fsub_index", 0)
         await save_group_settings(grp_id, "fsub_count", 0)
         
-        # Optionally set the first one as active
-        if pool:
-            await save_group_settings(grp_id, "fsub", [pool[0]])
+        # Set the first one as active
+        if valid_pool:
+            await save_group_settings(grp_id, "fsub", [valid_pool[0]])
             
-        await message.reply_text(f"✅ ꜰꜱᴜʙ ᴘᴏᴏʟ ᴜᴘᴅᴀᴛᴇᴅ ᴡɪᴛʜ {len(pool)} ᴄʜᴀɴɴᴇʟꜱ.\nꜰꜱᴜʙ ʀᴏᴛᴀᴛɪᴏɴ ʀᴇꜱᴇᴛ.")
+        await message.reply_text(f"✅ ꜰꜱᴜʙ ᴘᴏᴏʟ ᴜᴘᴅᴀᴛᴇᴅ ᴡɪᴛʜ {len(valid_pool)} ᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟꜱ.\nꜰꜱᴜʙ ʀᴏᴛᴀᴛɪᴏɴ ʀᴇꜱᴇᴛ.")
         return
 
-async def _schedule_delete(sent, message, time):
-    await asyncio.sleep(time)
+async def _schedule_delete(sent, message, delay):
+    if len(ACTIVE_DELETE) > DELETE_LIMIT:
+        return
+    
+    task = asyncio.current_task()
+    ACTIVE_DELETE.add(task)
+    
+    await asyncio.sleep(delay)
     try:
         await sent.delete()
         await message.delete()
     except:
         pass
+    finally:
+        ACTIVE_DELETE.discard(task)
 
 def clean_cache():
     now = time.time()
@@ -286,27 +307,34 @@ def get_next_markup(query_key, req_type, season, lang, qual, files):
 
 @Client.on_callback_query(filters.regex(r"^select_title\|"))
 async def select_title_callback(client: Client, query: CallbackQuery):
-    _, query_key, title_index = query.data.split("|", 2)
-    cache_entry = CACHE.get(query_key)
-    if not cache_entry:
-        return await query.answer("Cᴀᴄʜᴇ Exᴘɪʀᴇᴅ!", show_alert=True)
-    
-    title_name = cache_entry["titles"][int(title_index)]
-    
-    # Filter cache to ONLY this title
-    cache_entry["files"] = [f for f in cache_entry["files"] if getattr(f, "title", "").lower() == title_name.lower()]
-    
-    # Re-generate metadata lists for THIS specific title
-    cache_entry["langs"] = get_languages(cache_entry["files"])
-    cache_entry["quals"] = get_qualities(cache_entry["files"])
-    
-    # Now continue to next markup
-    markup = get_next_markup(query_key, "all", "all", "all", "all", cache_entry["files"])
     try:
+        await query.answer()
+        parts = query.data.split("|")
+        if len(parts) < 3:
+            return
+        _, query_key, title_index = parts
+        cache_entry = CACHE.get(query_key)
+        if not cache_entry:
+            return await query.answer("Cᴀᴄʜᴇ Exᴘɪʀᴇᴅ!", show_alert=True)
+        
+        try:
+            title_index = int(title_index)
+            title_name = cache_entry["titles"][title_index]
+        except:
+            return await query.answer("Iɴᴠᴀʟɪᴅ Sᴇʟᴇᴄᴛɪᴏɴ!", show_alert=True)
+        
+        # Filter cache to ONLY this title
+        cache_entry["files"] = [f for f in cache_entry["files"] if getattr(f, "title", "").lower() == title_name.lower()]
+        
+        # Re-generate metadata lists for THIS specific title
+        cache_entry["langs"] = get_languages(cache_entry["files"])
+        cache_entry["quals"] = get_qualities(cache_entry["files"])
+        
+        # Now continue to next markup
+        markup = get_next_markup(query_key, "all", "all", "all", "all", cache_entry["files"])
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(markup))
     except Exception as e:
-        logger.exception(e)
-    await query.answer(f"Sᴇʟᴇᴄᴛᴇᴅ: {title_name}")
+        logger.exception(f"select_title_callback error: {e}")
 
 
 
@@ -422,65 +450,57 @@ async def advantage_spoll_choker(bot, query):
 
 @Client.on_callback_query(filters.regex(r"^page\|"))
 async def pagination_callback(client: Client, query: CallbackQuery):
-    await query.answer()
-    parts = query.data.split("|")
-    if len(parts) != 7:
-        return
-        
-    _, query_key, req_type, season, lang_idx, qual_idx, page = parts
-    cache_entry = CACHE.get(query_key)
-    if not cache_entry:
-        return await query.edit_message_reply_markup(reply_markup=None)
-
-    files = cache_entry["files"]
-    markup = build_files_buttons(query_key, req_type, season, lang_idx, qual_idx, files, page=int(page))
-    
     try:
+        await query.answer()
+        parts = query.data.split("|")
+        if len(parts) != 7:
+            return
+            
+        _, query_key, req_type, season, lang_idx, qual_idx, page = parts
+        cache_entry = CACHE.get(query_key)
+        if not cache_entry:
+            return await query.edit_message_reply_markup(reply_markup=None)
+
+        try:
+            page = int(page)
+        except:
+            page = 0
+
+        files = cache_entry["files"]
+        markup = build_files_buttons(query_key, req_type, season, lang_idx, qual_idx, files, page=page)
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(markup))
     except Exception as e:
-        logger.exception(e)
+        logger.exception(f"pagination_callback error: {e}")
 
 @Client.on_callback_query(filters.regex(r"^([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)$"))
 async def new_hierarchical_filter_callback(client: Client, query: CallbackQuery):
-    await query.answer()
-    data = query.data
-    parts = data.split("|", 4)
-    if len(parts) != 5:
-        return await query.answer("Iɴᴠᴀʟɪᴅ Cᴀʟʟʙᴀᴄᴋ Dᴀᴛᴀ!", show_alert=True)
-        
-    query_key, req_type, season, lang_idx, qual_idx = parts
-    
     try:
-        if int(query.from_user.id) not in [query.message.reply_to_message.from_user.id, 0]:
-            return await query.answer("⚠️ Tʜɪꜱ ɪꜱ ɴᴏᴛ ʏᴏᴜʀ ᴍᴏᴠɪᴇ ʀᴇǫᴜᴇꜱᴛ!", show_alert=True)
-    except:
-        pass
-
-    clean_cache()
-    cache_entry = CACHE.get(query_key)
-    if not cache_entry:
-        return await query.answer("Cᴀᴄʜᴇ Exᴘɪʀᴇᴅ! Pʟᴇᴀꜱᴇ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ.", show_alert=True)
+        await query.answer()
+        data = query.data
+        parts = data.split("|", 4)
+        if len(parts) != 5:
+            return
+            
+        query_key, req_type, season, lang_idx, qual_idx = parts
         
-    # Resolve indexes
-    language = lang_idx
-    if lang_idx != "all" and lang_idx.isdigit():
-        language = cache_entry["langs"][int(lang_idx)]
-        
-    quality = qual_idx
-    if qual_idx != "all" and qual_idx.isdigit():
-        quality = cache_entry["quals"][int(qual_idx)]
+        try:
+            if int(query.from_user.id) not in [query.message.reply_to_message.from_user.id, 0]:
+                return await query.answer("⚠️ Tʜɪꜱ ɪꜱ ɴᴏᴛ ʏᴏᴜʀ ᴍᴏᴠɪᴇ ʀᴇǫᴜᴇꜱᴛ!", show_alert=True)
+        except:
+            pass
 
-    files = cache_entry["files"]
-    markup = get_next_markup(query_key, req_type, season, lang_idx, qual_idx, files)
-    
-    try:
+        cache_entry = CACHE.get(query_key)
+        if not cache_entry:
+            return await query.answer("Cᴀᴄʜᴇ Exᴘɪʀᴇᴅ! Pʟᴇᴀꜱᴇ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ.", show_alert=True)
+            
+        files = cache_entry["files"]
+        markup = get_next_markup(query_key, req_type, season, lang_idx, qual_idx, files)
+        
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(markup))
     except MessageNotModified:
-        # If it didn't change (e.g. auto-advance loop), show an alert
-        await query.answer("Nᴏ ᴏᴛʜᴇʀ ᴏᴘᴛɪᴏɴꜱ ᴀᴠᴀɪʟᴀʙʟᴇ!", show_alert=True)
+        pass
     except Exception as e:
-        logger.exception(e)
-    await query.answer()
+        logger.exception(f"hierarchical_filter error: {e}")
 
 
 @Client.on_callback_query(group=10)
@@ -1141,53 +1161,58 @@ async def cb_handler(client: Client, query: CallbackQuery):
             reply_markup=InlineKeyboardMarkup(group_list)
         )
 
-    elif query.data.startswith("setgs"):
-        ident, set_type, status, grp_id = query.data.split("#")
-        userid = query.from_user.id if query.from_user else None
-        if not await is_check_admin(client, int(grp_id), userid):
-            await query.answer(script.NT_ADMIN_ALRT_TXT, show_alert=True)
-            return
-        if status == "True":
-            await save_group_settings(int(grp_id), set_type, False)
-            await query.answer("ᴏꜰꜰ ✗")
-        elif status == "False":
-            await save_group_settings(int(grp_id), set_type, True)
-            await query.answer("ᴏɴ ✓")
-        elif set_type == "fsub_limit":
-            btn = [[
-                InlineKeyboardButton("1", callback_data=f"fsub_limit_set#1#{grp_id}"),
-                InlineKeyboardButton("3", callback_data=f"fsub_limit_set#3#{grp_id}"),
-                InlineKeyboardButton("5", callback_data=f"fsub_limit_set#5#{grp_id}"),
-                InlineKeyboardButton("10", callback_data=f"fsub_limit_set#10#{grp_id}"),
-            ],[
-                InlineKeyboardButton("🔙 Back", callback_data=f"opnsetgrp#{grp_id}")
-            ]]
-            await query.message.edit_text("<b>ꜱᴇʟᴇᴄᴛ ꜰꜱᴜʙ ʀᴏᴛᴀᴛɪᴏɴ ʟɪᴍɪᴛ:</b>", reply_markup=InlineKeyboardMarkup(btn))
-            return
-        elif set_type == "fsub_pool":
-            temp.SETTING_POOL[query.from_user.id] = int(grp_id)
-            await query.message.edit_text("<b>ꜱᴇɴᴅ ᴄʜᴀɴɴᴇʟ ɪᴅꜱ / ᴜꜱᴇʀɴᴀᴍᴇꜱ ꜰᴏʀ ꜰꜱᴜʙ ᴘᴏᴏʟ (ᴄᴏᴍᴍᴀ ꜱᴇᴘᴀʀᴀᴛᴇᴅ):\nᴇx: <code>-1001234567890, @channel2, @channel3</code></b>")
-            return
-        
-        settings = await get_settings(int(grp_id))
-        if settings is not None:
-            btn = await group_setting_buttons(int(grp_id))
-            reply_markup = InlineKeyboardMarkup(btn)
-            await query.message.edit_reply_markup(reply_markup)
+    try:
+        if query.data.startswith("setgs"):
+            await query.answer()
+            ident, set_type, status, grp_id = query.data.split("#")
+            userid = query.from_user.id if query.from_user else None
+            if not await is_check_admin(client, int(grp_id), userid):
+                await query.answer(script.NT_ADMIN_ALRT_TXT, show_alert=True)
+                return
+            
+            if status == "True":
+                await save_group_settings(int(grp_id), set_type, False)
+                await query.answer("ᴏꜰꜰ ✗")
+            elif status == "False":
+                await save_group_settings(int(grp_id), set_type, True)
+                await query.answer("ᴏɴ ✓")
+            elif set_type == "fsub_limit":
+                btn = [[
+                    InlineKeyboardButton("1", callback_data=f"fsub_limit_set#1#{grp_id}"),
+                    InlineKeyboardButton("3", callback_data=f"fsub_limit_set#3#{grp_id}"),
+                    InlineKeyboardButton("5", callback_data=f"fsub_limit_set#5#{grp_id}"),
+                    InlineKeyboardButton("10", callback_data=f"fsub_limit_set#10#{grp_id}"),
+                ],[
+                    InlineKeyboardButton("🔙 Back", callback_data=f"opnsetgrp#{grp_id}")
+                ]]
+                await query.message.edit_text("<b>ꜱᴇʟᴇᴄᴛ ꜰꜱᴜʙ ʀᴏᴛᴀᴛɪᴏɴ ʟɪᴍɪᴛ:</b>", reply_markup=InlineKeyboardMarkup(btn))
+                return
+            elif set_type == "fsub_pool":
+                temp.SETTING_POOL[query.from_user.id] = int(grp_id)
+                await query.message.edit_text("<b>ꜱᴇɴᴅ ᴄʜᴀɴɴᴇʟ ɪᴅꜱ / ᴜꜱᴇʀɴᴀᴍᴇꜱ ꜰᴏʀ ꜰꜱᴜʙ ᴘᴏᴏʟ (ᴄᴏᴍᴍᴀ ꜱᴇᴘᴀʀᴀᴛᴇᴅ):\nᴇx: <code>-1001234567890, @channel2, @channel3</code></b>")
+                return
+            
+            settings = await get_settings(int(grp_id))
+            if settings is not None:
+                btn = await group_setting_buttons(int(grp_id))
+                reply_markup = InlineKeyboardMarkup(btn)
+                await query.message.edit_reply_markup(reply_markup)
 
-    elif query.data.startswith("fsub_limit_set"):
-        _, value, grp_id = query.data.split("#")
-        await save_group_settings(int(grp_id), "fsub_limit", int(value))
-        await query.answer(f"ꜰꜱᴜʙ ʟɪᴍɪᴛ ꜱᴇᴛ ᴛᴏ {value} ✅")
-        btn = await group_setting_buttons(int(grp_id))
-        await query.message.edit_text(generate_settings_text(await get_settings(int(grp_id)), query.message.chat.title), reply_markup=InlineKeyboardMarkup(btn))
-    await query.answer(MSG_ALRT)
+        elif query.data.startswith("fsub_limit_set"):
+            await query.answer()
+            _, value, grp_id = query.data.split("#")
+            await save_group_settings(int(grp_id), "fsub_limit", int(value))
+            await query.answer(f"ꜰꜱᴜʙ ʟɪᴍɪᴛ ꜱᴇᴛ ᴛᴏ {value} ✅")
+            btn = await group_setting_buttons(int(grp_id))
+            await query.message.edit_text(generate_settings_text(await get_settings(int(grp_id)), query.message.chat.title), reply_markup=InlineKeyboardMarkup(btn))
+        
+        await query.answer(MSG_ALRT)
+    except Exception as e:
+        logger.exception(f"Callback Error: {e}")
+        await query.answer("Something went wrong!", show_alert=True)
 
 
 async def auto_filter(client, msg, spoll=False):
-    """
-    Optimized auto_filter with caching, rate limiting, and dataset capping.
-    """
     try:
         clean_cache()
         user_id = msg.from_user.id if msg.from_user else 0
@@ -1247,12 +1272,17 @@ async def auto_filter(client, msg, spoll=False):
             settings = await get_settings(message.chat.id)
             await msg.message.delete()
 
-        cache_key = hashlib.md5(f"{user_id}:{search.lower()}".encode()).hexdigest()[:8]
+        search = search.strip().lower()
+        cache_key = hashlib.md5(f"{user_id}:{search}".encode()).hexdigest()[:8]
+        if len(CACHE) > 100:
+            CACHE.clear()
+        
         CACHE[cache_key] = {
             "files": files, 
             "titles": get_titles(files),
             "langs": get_languages(files),
             "quals": get_qualities(files),
+            "search": search,
             "time": time.time()
         }
         

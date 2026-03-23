@@ -51,7 +51,12 @@ class Media(Document):
     quality = fields.StrField(allow_none=True)
 
     class Meta:
-        indexes = ({"fields": ["$file_name"], "language_override": "none"},)
+        indexes = (
+            {"fields": ["$title", "$file_name", "$caption"], "language_override": "none"},
+            "language",
+            "season",
+            "quality"
+        )
         collection_name = COLLECTION_NAME
 
 
@@ -73,7 +78,12 @@ class Media2(Document):
     quality = fields.StrField(allow_none=True)
 
     class Meta:
-        indexes = ({"fields": ["$file_name"], "language_override": "none"},)
+        indexes = (
+            {"fields": ["$title", "$file_name", "$caption"], "language_override": "none"},
+            "language",
+            "season",
+            "quality"
+        )
         collection_name = COLLECTION_NAME
 
 
@@ -156,7 +166,7 @@ def parse_metadata(file_name, caption):
     if not quality_match:
         quality_match = re.search(r"(480p|720p|1080p|1440p|2160p)", raw_text)
 
-    quality = quality_match.group(1).lower() if quality_match else None
+    quality = quality_match.group(1).strip().lower() if quality_match else "unknown"
 
     return {
         "title": title,
