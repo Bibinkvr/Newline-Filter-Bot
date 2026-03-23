@@ -589,7 +589,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             chat = file_id.split("_")[0]
             settings = await get_settings(chat)
             fsub_channels = list(dict.fromkeys((settings.get('fsub', []) if settings else [])+ AUTH_CHANNELS)) 
-            btn += await is_subscribed(client, query.from_user.id, fsub_channels, chat_id=grp_id)
+            btn += await is_subscribed(client, query.from_user.id, fsub_channels, chat_id=chat)
             btn += await is_req_subscribed(client, query.from_user.id, AUTH_REQ_CHANNELS)
             if btn:
                 btn.append([InlineKeyboardButton("♻️ ᴛʀʏ ᴀɢᴀɪɴ ♻️", callback_data=f"checksub#{kk}#{file_id}")])
@@ -607,7 +607,9 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.answer(url=f"https://t.me/{temp.U_NAME}?start={kk}_{file_id}")
             await query.message.delete()
         except Exception as e:
+            await query.answer("Something went wrong with verification! Please try again later.", show_alert=True)
             await log_error(client, f"❌ Error in checksub callback:\n\n{repr(e)}")
+            return
             logger.error(f"❌ Error in checksub callback:\n\n{repr(e)}")
 
 

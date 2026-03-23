@@ -148,8 +148,12 @@ async def is_subscribed(bot, user_id, fsub_channels, chat_id=0):
                     await save_group_settings(chat_id, "fsub_count", 0)
             
             try:
-                chat = await bot.get_chat(int(channel_id))
-                invite_link = await bot.create_chat_invite_link(channel_id)
+                try:
+                    c_id = int(channel_id)
+                except ValueError:
+                    c_id = str(channel_id)
+                chat = await bot.get_chat(c_id)
+                invite_link = await bot.create_chat_invite_link(c_id)
                 return InlineKeyboardButton(f"📢 Join {chat.title}", url=invite_link.invite_link)
             except Exception as e:
                 logger.warning(f"Failed to create invite for {channel_id}: {e}")
