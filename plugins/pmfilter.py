@@ -138,7 +138,7 @@ def get_languages(files, season=None):
     languages = set()
     for f in files:
         f_season = str(getattr(f, "season", ""))
-        if season and season != "all" and f_season != season:
+        if season and season not in ["all", "*"] and f_season != season:
             continue
         l = getattr(f, "language", None)
         if l:
@@ -149,10 +149,10 @@ def get_qualities(files, season=None, language=None):
     qualities = set()
     for f in files:
         f_season = str(getattr(f, "season", ""))
-        if season and season != "all" and f_season != season:
+        if season and season not in ["all", "*"] and f_season != season:
             continue
         f_lang = str(getattr(f, "language", "")).lower()
-        if language and language != "all" and f_lang != language:
+        if language and language not in ["all", "*"] and f_lang != language:
             continue
         q = getattr(f, "quality", None)
         if q:
@@ -176,8 +176,8 @@ def build_season_buttons(query_key, req_type, files):
         btn_list.append(InlineKeyboardButton(f"Sᴇᴀꜱᴏɴ {s}", callback_data=f"{query_key}|{req_type}|{s}|all|all"))
     btns = chunk_buttons(btn_list, 3)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Sᴇᴀꜱᴏɴ ⇊", callback_data="ident")])
-    if seasons:
-        btns.append([InlineKeyboardButton("Aʟʟ Sᴇᴀꜱᴏɴꜱ", callback_data=f"{query_key}|{req_type}|all|all|all")])
+    if seasons and len(seasons) > 1:
+        btns.append([InlineKeyboardButton("Aʟʟ Sᴇᴀꜱᴏɴꜱ", callback_data=f"{query_key}|{req_type}|*|all|all")])
     btns.append([InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ 🚫", callback_data="close_data")])
     return btns
 
@@ -191,8 +191,8 @@ def build_language_buttons(query_key, req_type, season, files):
         btn_list.append(InlineKeyboardButton(f"{l.title()}", callback_data=f"{query_key}|{req_type}|{season}|{i}|all"))
     btns = chunk_buttons(btn_list, 3)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Lᴀɴɢᴜᴀɢᴇ ⇊", callback_data="ident")])
-    if languages:
-        btns.append([InlineKeyboardButton("Aʟʟ Lᴀɴɢᴜᴀɢᴇꜱ", callback_data=f"{query_key}|{req_type}|{season}|all|all")])
+    if languages and len(languages) > 1:
+        btns.append([InlineKeyboardButton("Aʟʟ Lᴀɴɢᴜᴀɢᴇꜱ", callback_data=f"{query_key}|{req_type}|{season}|*|all")])
     if req_type == "series":
         btns.append([InlineKeyboardButton("🔙 Bᴀᴄᴋ ᴛᴏ Sᴇᴀꜱᴏɴꜱ", callback_data=f"{query_key}|{req_type}|all|all|all")])
     else:
@@ -210,8 +210,8 @@ def build_quality_buttons(query_key, req_type, season, language, files):
         btn_list.append(InlineKeyboardButton(f"{q.title()}", callback_data=f"{query_key}|{req_type}|{season}|{language}|{i}"))
     btns = chunk_buttons(btn_list, 3)
     btns.insert(0, [InlineKeyboardButton("⇊ Sᴇʟᴇᴄᴛ Qᴜᴀʟɪᴛʏ ⇊", callback_data="ident")])
-    if qualities:
-        btns.append([InlineKeyboardButton("Aʟʟ Qᴜᴀʟɪᴛɪᴇꜱ", callback_data=f"{query_key}|{req_type}|{season}|{language}|all")])
+    if qualities and len(qualities) > 1:
+        btns.append([InlineKeyboardButton("Aʟʟ Qᴜᴀʟɪᴛɪᴇꜱ", callback_data=f"{query_key}|{req_type}|{season}|{language}|*")])
     btns.append([InlineKeyboardButton("🔙 Bᴀᴄᴋ ᴛᴏ Lᴀɴɢᴜᴀɢᴇꜱ", callback_data=f"{query_key}|{req_type}|{season}|all|all")])
     btns.append([InlineKeyboardButton("🚫 ᴄʟᴏꜱᴇ 🚫", callback_data="close_data")])
     return btns
@@ -232,13 +232,13 @@ def build_files_buttons(query_key, req_type, season, lang, qual, files, page=0):
     filtered_files = []
     for f in files:
         f_season = str(getattr(f, "season", ""))
-        if req_type == "series" and season != "all" and f_season != season:
+        if req_type == "series" and season not in ["all", "*"] and f_season != season:
             continue
         f_lang = str(getattr(f, "language", "")).lower()
-        if resolved_lang != "all" and f_lang != resolved_lang:
+        if resolved_lang not in ["all", "*"] and f_lang != resolved_lang:
             continue
         f_qual = str(getattr(f, "quality", "")).lower()
-        if resolved_qual != "all" and f_qual != resolved_qual:
+        if resolved_qual not in ["all", "*"] and f_qual != resolved_qual:
             continue
         filtered_files.append(f)
 
