@@ -1292,10 +1292,16 @@ async def auto_filter(client, msg, spoll=False):
         imdb = None
         if settings.get('imdb'):
             imdb = await get_posterx(search, file=(files[0]).file_name) if TMDB_POSTER else await get_poster(search, file=(files[0]).file_name)
-        
+
         cap = f"<b>🏷 ᴛɪᴛʟᴇ : <code>{search}</code>\n🧱 ᴛᴏᴛᴀʟ ꜰɪʟᴇꜱ : <code>{total_results}</code>\n\n📝 ʀᴇǫᴜᴇsᴛᴇᴅ ʙʏ : {message.from_user.mention}\n</b>"
         if imdb and settings.get('template'):
-            cap = settings['template'].format(title=imdb['title'], year=imdb['year'], rating=imdb['rating'], plot=imdb['plot'][:200], **imdb)
+            try:
+                imdb_data = imdb.copy()
+                if 'plot' in imdb_data:
+                    imdb_data['plot'] = imdb_data['plot'][:200]
+                cap = settings['template'].format(**imdb_data)
+            except Exception as e:
+                logger.error(f"Template Error: {e}")
 
         sent = None
         markup = InlineKeyboardMarkup(btn)

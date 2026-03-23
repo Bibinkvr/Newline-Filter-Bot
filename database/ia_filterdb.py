@@ -52,7 +52,7 @@ class Media(Document):
 
     class Meta:
         indexes = (
-            {"fields": ["$title", "$file_name", "$caption"], "language_override": "none"},
+            {"key": [("title", "text"), ("file_name", "text"), ("caption", "text")], "name": "text_index", "language_override": "none"},
             "language",
             "season",
             "quality"
@@ -79,7 +79,7 @@ class Media2(Document):
 
     class Meta:
         indexes = (
-            {"fields": ["$title", "$file_name", "$caption"], "language_override": "none"},
+            {"key": [("title", "text"), ("file_name", "text"), ("caption", "text")], "name": "text_index", "language_override": "none"},
             "language",
             "season",
             "quality"
