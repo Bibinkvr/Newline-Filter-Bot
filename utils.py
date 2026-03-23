@@ -77,6 +77,7 @@ class temp(object):
     VERIFICATIONS = {}
     TEMP_INVITE_LINKS = {}
     REQ_LINKS = {}
+    SETTING_POOL = {}
 
 
 async def is_req_subscribed(bot, user_id, rqfsub_channels):
@@ -123,14 +124,29 @@ async def is_req_subscribed(bot, user_id, rqfsub_channels):
 
     return btn
 
-async def is_subscribed(bot, user_id, fsub_channels):
+async def is_subscribed(bot, user_id, fsub_channels, chat_id=0):
     btn = []
+    settings = await get_settings(chat_id) if chat_id else None
     
     async def check_channel(channel_id):
         try:
-            # No need to get chat object separately
             await bot.get_chat_member(channel_id, user_id)
         except UserNotParticipant:
+            if settings:
+                count = settings.get("fsub_count", 0) + 1
+                limit = settings.get("fsub_limit", 5)
+                pool = settings.get("fsub_pool", [])
+                index = settings.get("fsub_index", 0)
+                
+                await save_group_settings(chat_id, "fsub_count", count)
+                
+                if pool and count >= limit:
+                    index = (index + 1) % len(pool)
+                    new_channel = pool[index]
+                    await save_group_settings(chat_id, "fsub", [new_channel])
+                    await save_group_settings(chat_id, "fsub_index", index)
+                    await save_group_settings(chat_id, "fsub_count", 0)
+            
             try:
                 chat = await bot.get_chat(int(channel_id))
                 invite_link = await bot.create_chat_invite_link(channel_id)
@@ -450,7 +466,7 @@ async def get_posterx(query, bulk=False, id=False, file=None):
         details = await get_movie_detailsx(query, id=True)
 
     if not details or details.get("error"):
-        return None
+        return await get_poster(query, bulk=bulk, id=id, file=file)
     
     plot = ""
     if not LONG_IMDB_DESCRIPTION:
@@ -603,6 +619,9 @@ async def group_setting_buttons(grp_id):
             ],[
                 InlineKeyboardButton('ꜱᴘᴇʟʟ ᴄʜᴇᴄᴋ',callback_data=f'setgs#spell_check#{settings["spell_check"]}#{str(grp_id)}'),
                 InlineKeyboardButton('✔ Oɴ' if settings["spell_check"] else '✘ Oғғ',callback_data=f'setgs#spell_check#{settings["spell_check"]}#{str(grp_id)}')
+            ],[
+                InlineKeyboardButton(f"ꜰꜱᴜʙ ʟɪᴍɪᴛ: {settings.get('fsub_limit', 5)}", callback_data=f'setgs#fsub_limit#{settings.get("fsub_limit")}#{grp_id}'),
+                InlineKeyboardButton('ꜰꜱᴜʙ ᴘᴏᴏʟ', callback_data=f'setgs#fsub_pool#{0}#{grp_id}'),
             ],
             [
                 InlineKeyboardButton("❌ Remove ❌ ", callback_data=f"removegrp#{grp_id}")

@@ -162,7 +162,7 @@ async def get_movie_detailsx(query, id=False, file=None):
                 if resp.status != 200:
                     text = await resp.text()
                     logger.error(f"API request failed [{resp.status}] for query={q}\n {text}")
-                    return await resp.json()
+                    return None
                 
                 data = await resp.json()
     except Exception as e:

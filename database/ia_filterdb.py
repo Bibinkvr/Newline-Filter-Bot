@@ -51,7 +51,7 @@ class Media(Document):
     quality = fields.StrField(allow_none=True)
 
     class Meta:
-        indexes = ("$file_name",)
+        indexes = ({"fields": ["$file_name"], "language_override": "none"},)
         collection_name = COLLECTION_NAME
 
 
@@ -73,7 +73,7 @@ class Media2(Document):
     quality = fields.StrField(allow_none=True)
 
     class Meta:
-        indexes = ("$file_name",)
+        indexes = ({"fields": ["$file_name"], "language_override": "none"},)
         collection_name = COLLECTION_NAME
 
 

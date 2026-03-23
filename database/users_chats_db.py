@@ -158,9 +158,16 @@ class Database:
             'tutorial_3': TUTORIAL_3,
             'caption': CUSTOM_FILE_CAPTION,
             'fsub': AUTH_CHANNELS,
+            'fsub_limit': 5,
+            'fsub_pool': [],
+            'fsub_count': 0,
+            'fsub_index': 0
         }
         chat = await self.grp.find_one({'id':int(id)})
         if chat and 'settings' in chat:
+            for key, value in default.items():
+                if key not in chat['settings']:
+                    chat['settings'][key] = value
             return chat['settings']
         else:
             return default.copy()

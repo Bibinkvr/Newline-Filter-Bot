@@ -189,7 +189,7 @@ async def start(client, message):
                 fsub_channels = list(dict.fromkeys((settings.get('fsub', []) if settings else [])+ AUTH_CHANNELS)) 
 
                 if fsub_channels:
-                    btn += await is_subscribed(client, message.from_user.id, fsub_channels)
+                    btn += await is_subscribed(client, message.from_user.id, fsub_channels, chat_id=grp_id)
                 if AUTH_REQ_CHANNELS:
                     btn += await is_req_subscribed(client, message.from_user.id, AUTH_REQ_CHANNELS)
                 if btn:

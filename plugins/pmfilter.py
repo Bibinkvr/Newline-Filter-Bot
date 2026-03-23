@@ -39,6 +39,35 @@ MAX_CACHE = 100
 CACHE_TTL = 300
 USER_COOLDOWN = {}
 
+@Client.on_message(filters.private & filters.incoming)
+async def fsub_pool_msg_handler(client, message):
+    if message.from_user.id in temp.SETTING_POOL:
+        grp_id = temp.SETTING_POOL.pop(message.from_user.id)
+        text = message.text
+        pool = [x.strip() for x in text.split(",") if x.strip()]
+        if not pool:
+            await message.reply_text("Invalid input!")
+            return
+        
+        await save_group_settings(grp_id, "fsub_pool", pool)
+        await save_group_settings(grp_id, "fsub_index", 0)
+        await save_group_settings(grp_id, "fsub_count", 0)
+        
+        # Optionally set the first one as active
+        if pool:
+            await save_group_settings(grp_id, "fsub", [pool[0]])
+            
+        await message.reply_text(f"✅ ꜰꜱᴜʙ ᴘᴏᴏʟ ᴜᴘᴅᴀᴛᴇᴅ ᴡɪᴛʜ {len(pool)} ᴄʜᴀɴɴᴇʟꜱ.\nꜰꜱᴜʙ ʀᴏᴛᴀᴛɪᴏɴ ʀᴇꜱᴇᴛ.")
+        return
+
+async def _schedule_delete(sent, message, time):
+    await asyncio.sleep(time)
+    try:
+        await sent.delete()
+        await message.delete()
+    except:
+        pass
+
 def clean_cache():
     now = time.time()
     # Remove expired
@@ -540,7 +569,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             chat = file_id.split("_")[0]
             settings = await get_settings(chat)
             fsub_channels = list(dict.fromkeys((settings.get('fsub', []) if settings else [])+ AUTH_CHANNELS)) 
-            btn += await is_subscribed(client, query.from_user.id, fsub_channels)
+            btn += await is_subscribed(client, query.from_user.id, fsub_channels, chat_id=grp_id)
             btn += await is_req_subscribed(client, query.from_user.id, AUTH_REQ_CHANNELS)
             if btn:
                 btn.append([InlineKeyboardButton("♻️ ᴛʀʏ ᴀɢᴀɪɴ ♻️", callback_data=f"checksub#{kk}#{file_id}")])
@@ -1121,14 +1150,37 @@ async def cb_handler(client: Client, query: CallbackQuery):
         if status == "True":
             await save_group_settings(int(grp_id), set_type, False)
             await query.answer("ᴏꜰꜰ ✗")
-        else:
+        elif status == "False":
             await save_group_settings(int(grp_id), set_type, True)
             await query.answer("ᴏɴ ✓")
+        elif set_type == "fsub_limit":
+            btn = [[
+                InlineKeyboardButton("1", callback_data=f"fsub_limit_set#1#{grp_id}"),
+                InlineKeyboardButton("3", callback_data=f"fsub_limit_set#3#{grp_id}"),
+                InlineKeyboardButton("5", callback_data=f"fsub_limit_set#5#{grp_id}"),
+                InlineKeyboardButton("10", callback_data=f"fsub_limit_set#10#{grp_id}"),
+            ],[
+                InlineKeyboardButton("🔙 Back", callback_data=f"opnsetgrp#{grp_id}")
+            ]]
+            await query.message.edit_text("<b>ꜱᴇʟᴇᴄᴛ ꜰꜱᴜʙ ʀᴏᴛᴀᴛɪᴏɴ ʟɪᴍɪᴛ:</b>", reply_markup=InlineKeyboardMarkup(btn))
+            return
+        elif set_type == "fsub_pool":
+            temp.SETTING_POOL[query.from_user.id] = int(grp_id)
+            await query.message.edit_text("<b>ꜱᴇɴᴅ ᴄʜᴀɴɴᴇʟ ɪᴅꜱ / ᴜꜱᴇʀɴᴀᴍᴇꜱ ꜰᴏʀ ꜰꜱᴜʙ ᴘᴏᴏʟ (ᴄᴏᴍᴍᴀ ꜱᴇᴘᴀʀᴀᴛᴇᴅ):\nᴇx: <code>-1001234567890, @channel2, @channel3</code></b>")
+            return
+        
         settings = await get_settings(int(grp_id))
         if settings is not None:
             btn = await group_setting_buttons(int(grp_id))
             reply_markup = InlineKeyboardMarkup(btn)
             await query.message.edit_reply_markup(reply_markup)
+
+    elif query.data.startswith("fsub_limit_set"):
+        _, value, grp_id = query.data.split("#")
+        await save_group_settings(int(grp_id), "fsub_limit", int(value))
+        await query.answer(f"ꜰꜱᴜʙ ʟɪᴍɪᴛ ꜱᴇᴛ ᴛᴏ {value} ✅")
+        btn = await group_setting_buttons(int(grp_id))
+        await query.message.edit_text(generate_settings_text(await get_settings(int(grp_id)), query.message.chat.title), reply_markup=InlineKeyboardMarkup(btn))
     await query.answer(MSG_ALRT)
 
 
